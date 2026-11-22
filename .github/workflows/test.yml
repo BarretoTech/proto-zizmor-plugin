@@ -1,0 +1,49 @@
+name: Install test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
+        with:
+          proto-version: "0.63.2"
+          cache: false
+      - name: Install and run pinned and latest tool versions
+        shell: pwsh
+        env:
+          TOOL: zizmor
+          PINNED_VERSION: "1.32.0"
+          PROTO_REPORTER: text
+          PROTO_CONFIG_MODE: local
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($version in @($env:PINNED_VERSION, 'latest')) {
+            $env:PROTO_HOME = Join-Path $env:RUNNER_TEMP "proto-$version"
+            proto plugin add $env:TOOL 'file://./plugin.toml' --to local
+            proto install $env:TOOL $version
+            $executable = proto bin $env:TOOL $version
+            if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+              throw "Executable missing: $executable"
+            }
+            & $executable '--version'
+          }
